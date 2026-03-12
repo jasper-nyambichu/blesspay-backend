@@ -98,7 +98,7 @@ const deleteMember = async (req, res) => {
 const getAllTransactions = async (req, res) => {
     try {
         const transactions = await Transaction.find()
-            .populate('user', 'fullName email phone')
+            .populate('user', 'username email phone')
             .sort({ createdAt: -1 })
 
         res.status(200).json({
