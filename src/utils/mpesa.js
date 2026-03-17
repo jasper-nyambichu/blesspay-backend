@@ -1,3 +1,4 @@
+// src/utils/mpesa.js
 import axios from 'axios'
 
 const MPESA_BASE_URL =
@@ -5,20 +6,39 @@ const MPESA_BASE_URL =
         ? 'https://api.safaricom.co.ke'
         : 'https://sandbox.safaricom.co.ke'
 
-// get OAuth access token from Safaricom
+// ── Token cache — avoids a Safaricom round trip on every payment ──────
+// Safaricom tokens expire after 3600s. We refresh 5 minutes early.
+let cachedToken = null
+let tokenExpiresAt = 0
+
 const getAccessToken = async () => {
+    const now = Date.now()
+
+    // return cached token if still valid
+    if (cachedToken && now < tokenExpiresAt) {
+        return cachedToken
+    }
+
     const credentials = Buffer.from(
         `${process.env.MPESA_CONSUMER_KEY}:${process.env.MPESA_CONSUMER_SECRET}`
     ).toString('base64')
 
-    const response = await axios.get(`${MPESA_BASE_URL}/oauth/v1/generate?grant_type=client_credentials`, {
-        headers: { Authorization: `Basic ${credentials}` },
-    })
+    const response = await axios.get(
+        `${MPESA_BASE_URL}/oauth/v1/generate?grant_type=client_credentials`,
+        {
+            headers: { Authorization: `Basic ${credentials}` },
+            timeout: 10000, // 10s timeout — fail fast if Safaricom is slow
+        }
+    )
 
-    return response.data.access_token
+    cachedToken = response.data.access_token
+    // cache for 55 minutes (token lasts 60 min, refresh 5 min early)
+    tokenExpiresAt = now + 55 * 60 * 1000
+
+    return cachedToken
 }
 
-// generate base64 encoded password for STK push
+// ── Generate base64 password for STK push ────────────────────────────
 const generatePassword = () => {
     const timestamp = new Date()
         .toISOString()
@@ -32,13 +52,16 @@ const generatePassword = () => {
     return { password, timestamp }
 }
 
-// format phone number to 254XXXXXXXXX
+// ── Format phone to 254XXXXXXXXX ─────────────────────────────────────
 const formatPhone = (phone) => {
-    const cleaned = phone.replace(/\s+/g, '').replace(/^0/, '254').replace(/^\+/, '')
+    const cleaned = phone
+        .replace(/\s+/g, '')
+        .replace(/^0/, '254')
+        .replace(/^\+/, '')
     return cleaned
 }
 
-// trigger STK push to user's phone
+// ── Trigger STK push ──────────────────────────────────────────────────
 const stkPush = async ({ accessToken, phone, amount }) => {
     const { password, timestamp } = generatePassword()
 
@@ -59,10 +82,11 @@ const stkPush = async ({ accessToken, phone, amount }) => {
         },
         {
             headers: { Authorization: `Bearer ${accessToken}` },
+            timeout: 15000, // 15s timeout — Safaricom STK can be slow
         }
     )
 
     return response.data
 }
 
-export { getAccessToken, stkPush }
+export { getAccessToken, stkPush, formatPhone }
