@@ -1,12 +1,13 @@
+// src/utils/receiptGenerator.js
 import PDFDocument from 'pdfkit'
 
 const generateReceipt = (transaction, user) => {
     return new Promise((resolve, reject) => {
-        const doc = new PDFDocument({ margin: 50 })
+        const doc     = new PDFDocument({ margin: 50 })
         const buffers = []
 
-        doc.on('data', (chunk) => buffers.push(chunk))
-        doc.on('end', () => resolve(Buffer.concat(buffers)))
+        doc.on('data',  (chunk) => buffers.push(chunk))
+        doc.on('end',   () => resolve(Buffer.concat(buffers)))
         doc.on('error', reject)
 
         // header
@@ -19,17 +20,16 @@ const generateReceipt = (transaction, user) => {
         // transaction details
         doc.fontSize(12).font('Helvetica-Bold').text('Transaction Details')
         doc.moveDown(0.5)
-
         doc.font('Helvetica')
-        doc.text(`Receipt No     : ${transaction.mpesaReceiptNumber || 'N/A'}`)
-        doc.text(`Date           : ${new Date(transaction.createdAt).toLocaleString()}`)
-        doc.text(`Member         : ${user.username}`)
+        doc.text(`Receipt No     : ${transaction.mpesa_receipt_number || 'N/A'}`)
+        doc.text(`Date           : ${new Date(transaction.created_at).toLocaleString()}`)
+        doc.text(`Member         : ${user.first_name} ${user.last_name}`)
         doc.text(`Email          : ${user.email}`)
         doc.text(`Phone          : ${transaction.phone}`)
         doc.text(`Type           : ${transaction.type.charAt(0).toUpperCase() + transaction.type.slice(1)}`)
-        doc.text(`Amount         : KES ${transaction.amount.toLocaleString()}`)
+        doc.text(`Amount         : KES ${Number(transaction.amount).toLocaleString()}`)
         doc.text(`Status         : ${transaction.status.toUpperCase()}`)
-        doc.text(`Payment Method : Mpesa`)
+        doc.text(`Payment Method : M-Pesa`)
 
         doc.moveDown()
         doc.moveTo(50, doc.y).lineTo(550, doc.y).stroke()

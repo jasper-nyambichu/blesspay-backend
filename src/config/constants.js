@@ -1,4 +1,4 @@
-const ROLES = Object.freeze({ MEMBER: 'member', ADMIN: 'admin' })
+const ROLES = Object.freeze({ MEMBER: 'member', ADMIN: 'admin', TREASURER: 'treasurer' })
 
 const ACCOUNT_STATUS = Object.freeze({ ACTIVE: 'active', SUSPENDED: 'suspended' })
 
@@ -21,10 +21,12 @@ const JWT = Object.freeze({
 
 const BCRYPT = Object.freeze({ SALT_ROUNDS: 12 })
 
+const isDev = process.env.NODE_ENV !== 'production'
+
 const RATE_LIMIT = Object.freeze({
-    GLOBAL: { WINDOW_MS: 15 * 60 * 1000, MAX_REQUESTS: 100 },
-    AUTH: { WINDOW_MS: 15 * 60 * 1000, MAX_REQUESTS: 10 },
-    PAYMENT: { WINDOW_MS: 60 * 1000, MAX_REQUESTS: 3 },
+    GLOBAL:  { WINDOW_MS: 15 * 60 * 1000, MAX_REQUESTS: isDev ? 1000 : 100 },
+    AUTH:    { WINDOW_MS: 15 * 60 * 1000, MAX_REQUESTS: isDev ? 100  : 10  },
+    PAYMENT: { WINDOW_MS: 60 * 1000,      MAX_REQUESTS: isDev ? 20   : 3   },
 })
 
 const HTTP_STATUS = Object.freeze({

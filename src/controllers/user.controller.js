@@ -1,38 +1,31 @@
+// src/controllers/user.controller.js
 import { User } from '../models/user.model.js'
 import { Transaction } from '../models/transaction.model.js'
 
-// Get logged in member profile
+// ── Get logged in member profile ──────────────────────────────
 const getProfile = async (req, res) => {
     try {
-        const user = await User.findById(req.user.id).select('-password')
+        const user = await User.findById(req.user.id)
         if (!user) {
             return res.status(404).json({ message: 'User not found' })
         }
-
         res.status(200).json({ message: 'Profile retrieved successfully', user })
     } catch (error) {
         res.status(500).json({ message: 'Internal Server Error', error: error.message })
     }
 }
 
-// Update member profile
+// ── Update member profile ─────────────────────────────────────
 const updateProfile = async (req, res) => {
     try {
-        const { username, phone } = req.body
+        const { firstName, lastName, phone } = req.body
 
-        if (username) {
-            const existingUsername = await User.findOne({ username: username.toLowerCase(), _id: { $ne: req.user.id } })
-            if (existingUsername) {
-                return res.status(409).json({ message: 'Username is already taken' })
-            }
-        }
+        const updates = {}
+        if (firstName) updates.first_name = firstName
+        if (lastName)  updates.last_name  = lastName
+        if (phone)     updates.phone      = phone
 
-        const user = await User.findByIdAndUpdate(
-            req.user.id,
-            { ...(username && { username: username.toLowerCase() }), ...(phone && { phone }) },
-            { new: true, runValidators: true }
-        ).select('-password')
-
+        const user = await User.updateById(req.user.id, updates)
         if (!user) {
             return res.status(404).json({ message: 'User not found' })
         }
@@ -43,7 +36,7 @@ const updateProfile = async (req, res) => {
     }
 }
 
-// Change password
+// ── Change password ───────────────────────────────────────────
 const changePassword = async (req, res) => {
     try {
         const { currentPassword, newPassword } = req.body
@@ -57,37 +50,35 @@ const changePassword = async (req, res) => {
             return res.status(404).json({ message: 'User not found' })
         }
 
-        const isMatch = await user.comparePassword(currentPassword)
+        if (!user.password_hash) {
+            return res.status(400).json({ message: 'Google sign-in accounts cannot change password here.' })
+        }
+
+        const isMatch = await User.comparePassword(currentPassword, user.password_hash)
         if (!isMatch) {
             return res.status(401).json({ message: 'Current password is incorrect' })
         }
 
-        user.password = newPassword
-        await user.save()
-
+        await User.updatePassword(req.user.id, newPassword)
         res.status(200).json({ message: 'Password changed successfully' })
     } catch (error) {
         res.status(500).json({ message: 'Internal Server Error', error: error.message })
     }
 }
 
-// Get member dashboard summary — total tithe, offering and recent transactions
+// ── Get member dashboard summary ──────────────────────────────
 const getDashboard = async (req, res) => {
     try {
-        const userId = req.user.id
-
-        const transactions = await Transaction.find({ user: userId, status: 'success' })
-            .sort({ createdAt: -1 })
+        const transactions = await Transaction.findSuccessByUserId(req.user.id)
 
         const totalTithe = transactions
             .filter(t => t.type === 'tithe')
-            .reduce((sum, t) => sum + t.amount, 0)
+            .reduce((sum, t) => sum + Number(t.amount), 0)
 
         const totalOffering = transactions
             .filter(t => t.type === 'offering')
-            .reduce((sum, t) => sum + t.amount, 0)
+            .reduce((sum, t) => sum + Number(t.amount), 0)
 
-        // show only the 5 most recent on dashboard
         const recentTransactions = transactions.slice(0, 5)
 
         res.status(200).json({
@@ -105,12 +96,10 @@ const getDashboard = async (req, res) => {
     }
 }
 
-// Get full transaction history for logged in member
+// ── Get full transaction history ──────────────────────────────
 const getTransactionHistory = async (req, res) => {
     try {
-        const transactions = await Transaction.find({ user: req.user.id })
-            .sort({ createdAt: -1 })
-
+        const transactions = await Transaction.findByUserId(req.user.id)
         res.status(200).json({
             message: 'Transaction history retrieved successfully',
             total: transactions.length,

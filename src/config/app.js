@@ -7,10 +7,14 @@ import compression  from 'compression'
 import 'dotenv/config'
 
 import authRoutes        from '../routes/auth.routes.js'
+import '../config/passport.js'
 import userRoutes        from '../routes/user.routes.js'
 import paymentRoutes     from '../routes/payment.routes.js'
 import transactionRoutes from '../routes/transaction.routes.js'
 import adminRoutes       from '../routes/admin.routes.js'
+import treasurerRoutes   from '../routes/treasurer.routes.js'
+import notificationRoutes from '../routes/notification.routes.js'
+import passport from 'passport'
 import { globalLimiter, authLimiter } from '../middleware/rateLimiter.middleware.js'
 
 const app = express()
@@ -69,6 +73,7 @@ app.options('/{*path}', cors())
 app.use(express.json({ limit: '10kb' }))
 app.use(express.urlencoded({ extended: true, limit: '10kb' }))
 app.use(cookieParser())
+app.use(passport.initialize())
 
 // ── Global rate limiter ───────────────────────────────────────────────
 app.use('/api', globalLimiter)
@@ -87,11 +92,13 @@ app.get('/health', (req, res) => {
 })
 
 // ── API Routes ────────────────────────────────────────────────────────
-app.use('/api/auth',         authLimiter, authRoutes)
+app.use('/api/auth',         authRoutes)
 app.use('/api/user',         userRoutes)
 app.use('/api/payment',      paymentRoutes)
 app.use('/api/transactions', transactionRoutes)
 app.use('/api/admin',        adminRoutes)
+app.use('/api/treasurer',    treasurerRoutes)
+app.use('/api/notifications', notificationRoutes)
 
 // ── 404 handler ───────────────────────────────────────────────────────
 app.use((req, res) => {
@@ -107,18 +114,6 @@ app.use((err, req, res, next) => {
 
     if (err.message?.startsWith('CORS policy')) {
         return res.status(403).json({ message: err.message })
-    }
-
-    // Mongoose validation errors — return field-level errors, not a 500
-    if (err.name === 'ValidationError') {
-        const messages = Object.values(err.errors).map(e => e.message)
-        return res.status(400).json({ message: messages[0] ?? 'Validation failed' })
-    }
-
-    // Mongoose duplicate key error (e.g. username/email already taken)
-    if (err.code === 11000) {
-        const field = Object.keys(err.keyValue || {})[0] ?? 'field'
-        return res.status(409).json({ message: `${field} already exists` })
     }
 
     // JWT errors

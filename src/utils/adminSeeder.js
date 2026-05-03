@@ -1,34 +1,53 @@
-import mongoose from 'mongoose'
+// src/utils/adminSeeder.js
+import { connectDB } from '../config/db.js'
 import { Admin } from '../models/admin.model.js'
 import 'dotenv/config'
 
-const seedAdmin = async () => {
+const seedAccounts = async () => {
     try {
-        await mongoose.connect(process.env.MONGO_URI)
-        console.log('✅ MongoDB connected')
+        await connectDB()
+        console.log('✅  Database connected')
 
-        const existing = await Admin.findOne({ email: 'admin@blesspay.com' })
-        if (existing) {
-            console.log('⚠️  Admin already exists')
-            process.exit(0)
+        // ── Seed Admin ────────────────────────────────────────
+        const existingAdmin = await Admin.findByEmail('admin@blesspay.com')
+        if (existingAdmin) {
+            console.log('⚠️   Admin already exists — skipping')
+        } else {
+            await Admin.create({
+                firstName: 'Super',
+                lastName:  'Admin',
+                email:     'admin@blesspay.com',
+                password:  'Admin@12345',
+                role:      'admin',
+            })
+            console.log('✅  Admin created')
+            console.log('    Email    : admin@blesspay.com')
+            console.log('    Password : Admin@12345')
         }
 
-        await Admin.create({
-            username: 'superadmin',
-            email: 'admin@blesspay.com',
-            password: 'Admin@12345',
-        })
+        // ── Seed Treasurer ────────────────────────────────────
+        const existingTreasurer = await Admin.findByEmail('treasurer@blesspay.com')
+        if (existingTreasurer) {
+            console.log('⚠️   Treasurer already exists — skipping')
+        } else {
+            await Admin.create({
+                firstName: 'Church',
+                lastName:  'Treasurer',
+                email:     'treasurer@blesspay.com',
+                password:  'Treasurer@12345',
+                role:      'treasurer',
+            })
+            console.log('✅  Treasurer created')
+            console.log('    Email    : treasurer@blesspay.com')
+            console.log('    Password : Treasurer@12345')
+        }
 
-        console.log('✅ Admin created successfully')
-        console.log('   Email    : admin@blesspay.com')
-        console.log('   Password : Admin@12345')
-        console.log('⚠️  Change this password immediately after first login')
+        console.log('⚠️   Change all default passwords immediately after first login')
         process.exit(0)
     } catch (error) {
-        console.error('❌ Seeder failed:', error.message)
+        console.error('❌  Seeder failed:', error.message)
         process.exit(1)
     }
 }
 
-seedAdmin()
-
+seedAccounts()

@@ -26,9 +26,13 @@
     "helmet": "^8.1.0",
     "jsonwebtoken": "^9.0.3",
     "mongoose": "^9.2.4",
-    "pdfkit": "^0.17.2"
+    "passport": "^0.7.0",
+    "passport-google-oauth20": "^2.0.0",
+    "pdfkit": "^0.17.2",
+    "pg": "^8.20.0"
   },
   "devDependencies": {
-    "@types/compression": "^1.8.1"
+    "@types/compression": "^1.8.1",
+    "nodemon": "^3.1.14"
   }
 }

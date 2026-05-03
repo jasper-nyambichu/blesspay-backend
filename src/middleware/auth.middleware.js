@@ -1,3 +1,4 @@
+// src/middleware/auth.middleware.js
 import jwt from 'jsonwebtoken'
 import { User } from '../models/user.model.js'
 import { Admin } from '../models/admin.model.js'
@@ -13,13 +14,12 @@ const protect = async (req, res, next) => {
         const token = authHeader.split(' ')[1]
         const decoded = jwt.verify(token, process.env.JWT_ACCESS_SECRET)
 
-        // check both collections based on role in token
         let user = null
 
-        if (decoded.role === 'admin') {
-            user = await Admin.findById(decoded.id).select('-password')
+        if (decoded.role === 'admin' || decoded.role === 'treasurer') {
+            user = await Admin.findById(decoded.id)
         } else {
-            user = await User.findById(decoded.id).select('-password')
+            user = await User.findById(decoded.id)
         }
 
         if (!user) {
@@ -30,7 +30,7 @@ const protect = async (req, res, next) => {
             return res.status(403).json({ message: 'Your account has been suspended. Contact admin.' })
         }
 
-        req.user = { id: user._id, role: user.role, status: user.status }
+        req.user = { id: user.id, role: user.role, status: user.status }
         next()
     } catch (error) {
         if (error.name === 'TokenExpiredError') {

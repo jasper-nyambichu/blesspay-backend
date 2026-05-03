@@ -1,65 +1,72 @@
+// src/controllers/auth.controller.js
 import { User } from '../models/user.model.js'
 import { Admin } from '../models/admin.model.js'
 import { generateAccessToken, generateRefreshToken } from '../utils/generateToken.js'
+import { Notification } from '../models/notification.model.js'
 import jwt from 'jsonwebtoken'
 
-// Register new member
+const cookieOptions = {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'strict',
+    maxAge: 7 * 24 * 60 * 60 * 1000,
+}
+
+// ── Register new member ───────────────────────────────────────
 const registerUser = async (req, res) => {
     try {
-        const { username, email, phone, password } = req.body
+        const { firstName, lastName, email, phone, password } = req.body
 
-        if (!username || !email || !phone || !password) {
+        if (!firstName || !lastName || !email || !phone || !password) {
             return res.status(400).json({ message: 'All fields are required' })
         }
 
-        const existingEmail = await User.findOne({ email: email.toLowerCase() })
-        if (existingEmail) {
+        const existing = await User.findByEmail(email)
+        if (existing) {
             return res.status(409).json({ message: 'Email is already registered' })
         }
 
-        const existingUsername = await User.findOne({ username: username.toLowerCase() })
-        if (existingUsername) {
-            return res.status(409).json({ message: 'Username is already taken' })
-        }
+        const user = await User.create({ firstName, lastName, email, phone, password })
 
-        const user = await User.create({
-            username: username.toLowerCase(),
-            email: email.toLowerCase(),
-            phone,
-            password,
-            loggedIn: false,
+        // welcome notification
+        await Notification.create({
+            userId:  user.id,
+            type:    'info',
+            title:   'Welcome to BlessPay! 🙏',
+            message: `Hi ${firstName}, your account has been created successfully. Start your giving journey today.`,
         })
 
-        const accessToken = generateAccessToken({ id: user._id, role: user.role })
-        const refreshToken = generateRefreshToken({ id: user._id, role: user.role })
+        const accessToken  = generateAccessToken({ id: user.id, role: user.role })
+        const refreshToken = generateRefreshToken({ id: user.id, role: user.role })
 
-        res.cookie('refreshToken', refreshToken, {
-            httpOnly: true,
-            secure: process.env.NODE_ENV === 'production',
-            sameSite: 'strict',
-            maxAge: 7 * 24 * 60 * 60 * 1000,
-        })
+        res.cookie('refreshToken', refreshToken, cookieOptions)
 
         res.status(201).json({
             message: 'Account created successfully',
             accessToken,
-            user: { id: user._id, username: user.username, email: user.email, role: user.role },
+            user: {
+                id: user.id,
+                firstName: user.first_name,
+                lastName: user.last_name,
+                email: user.email,
+                role: user.role,
+            },
         })
     } catch (error) {
         res.status(500).json({ message: 'Internal Server Error', error: error.message })
     }
 }
 
-// Login member
+// ── Login member ──────────────────────────────────────────────
 const loginUser = async (req, res) => {
     try {
-        const { username, password } = req.body
+        const { email, password } = req.body
 
-        if (!username || !password) {
-            return res.status(400).json({ message: 'Username and password are required' })
+        if (!email || !password) {
+            return res.status(400).json({ message: 'Email and password are required' })
         }
 
-        const user = await User.findOne({ username: username.toLowerCase() })
+        const user = await User.findByEmail(email)
         if (!user) {
             return res.status(404).json({ message: 'Account not found' })
         }
@@ -68,52 +75,50 @@ const loginUser = async (req, res) => {
             return res.status(403).json({ message: 'Your account has been suspended. Contact admin.' })
         }
 
-        // ✅ compare FIRST before saving
-        const isMatch = await user.comparePassword(password)
+        if (!user.password_hash) {
+            return res.status(400).json({ message: 'This account uses Google sign-in. Please login with Google.' })
+        }
+
+        const isMatch = await User.comparePassword(password, user.password_hash)
         if (!isMatch) {
             return res.status(401).json({ message: 'Invalid credentials' })
         }
 
-        // ✅ then mark logged in
-        user.loggedIn = true
-        await user.save()
+        await User.updateById(user.id, { logged_in: true })
 
-        const accessToken = generateAccessToken({ id: user._id, role: user.role })
-        const refreshToken = generateRefreshToken({ id: user._id, role: user.role })
+        const accessToken  = generateAccessToken({ id: user.id, role: user.role })
+        const refreshToken = generateRefreshToken({ id: user.id, role: user.role })
 
-        res.cookie('refreshToken', refreshToken, {
-            httpOnly: true,
-            secure: process.env.NODE_ENV === 'production',
-            sameSite: 'strict',
-            maxAge: 7 * 24 * 60 * 60 * 1000,
-        })
+        res.cookie('refreshToken', refreshToken, cookieOptions)
 
         res.status(200).json({
             message: 'Login successful',
             accessToken,
-            user: { id: user._id, username: user.username, email: user.email, role: user.role },
+            user: {
+                id: user.id,
+                firstName: user.first_name,
+                lastName: user.last_name,
+                email: user.email,
+                role: user.role,
+            },
         })
     } catch (error) {
         res.status(500).json({ message: 'Internal Server Error', error: error.message })
     }
 }
 
-// Logout member
+// ── Logout member ─────────────────────────────────────────────
 const logoutUser = async (req, res) => {
     try {
-        res.clearCookie('refreshToken', {
-            httpOnly: true,
-            secure: process.env.NODE_ENV === 'production',
-            sameSite: 'strict',
-        })
-
+        await User.updateById(req.user.id, { logged_in: false })
+        res.clearCookie('refreshToken', cookieOptions)
         res.status(200).json({ message: 'Logged out successfully' })
     } catch (error) {
         res.status(500).json({ message: 'Internal Server Error', error: error.message })
     }
 }
 
-// Issue new access token using refresh token from cookie
+// ── Refresh access token ──────────────────────────────────────
 const refreshAccessToken = async (req, res) => {
     try {
         const token = req.cookies.refreshToken
@@ -123,13 +128,18 @@ const refreshAccessToken = async (req, res) => {
 
         const decoded = jwt.verify(token, process.env.JWT_REFRESH_SECRET)
 
-        const user = await User.findById(decoded.id)
+        let user = null
+        if (decoded.role === 'admin' || decoded.role === 'treasurer') {
+            user = await Admin.findById(decoded.id)
+        } else {
+            user = await User.findById(decoded.id)
+        }
+
         if (!user || user.status === 'suspended') {
             return res.status(403).json({ message: 'Access denied' })
         }
 
-        const newAccessToken = generateAccessToken({ id: user._id, role: user.role })
-
+        const newAccessToken = generateAccessToken({ id: user.id, role: user.role })
         res.status(200).json({ accessToken: newAccessToken })
     } catch (error) {
         if (error.name === 'TokenExpiredError') {
@@ -138,7 +148,8 @@ const refreshAccessToken = async (req, res) => {
         res.status(500).json({ message: 'Internal Server Error', error: error.message })
     }
 }
-// Admin Login
+
+// ── Admin login ───────────────────────────────────────────────
 const loginAdmin = async (req, res) => {
     try {
         const { email, password } = req.body
@@ -147,8 +158,8 @@ const loginAdmin = async (req, res) => {
             return res.status(400).json({ message: 'Email and password are required' })
         }
 
-        const admin = await Admin.findOne({ email: email.toLowerCase() })
-        if (!admin) {
+        const admin = await Admin.findByEmail(email)
+        if (!admin || admin.role !== 'admin') {
             return res.status(404).json({ message: 'Admin account not found' })
         }
 
@@ -156,29 +167,93 @@ const loginAdmin = async (req, res) => {
             return res.status(403).json({ message: 'This admin account has been suspended.' })
         }
 
-        const isMatch = await admin.comparePassword(password)
+        const isMatch = await Admin.comparePassword(password, admin.password_hash)
         if (!isMatch) {
             return res.status(401).json({ message: 'Invalid credentials' })
         }
 
-        const accessToken = generateAccessToken({ id: admin._id, role: admin.role })
-        const refreshToken = generateRefreshToken({ id: admin._id, role: admin.role })
+        const accessToken  = generateAccessToken({ id: admin.id, role: admin.role })
+        const refreshToken = generateRefreshToken({ id: admin.id, role: admin.role })
 
-        res.cookie('refreshToken', refreshToken, {
-            httpOnly: true,
-            secure: process.env.NODE_ENV === 'production',
-            sameSite: 'strict',
-            maxAge: 7 * 24 * 60 * 60 * 1000,
-        })
+        res.cookie('refreshToken', refreshToken, cookieOptions)
 
         res.status(200).json({
             message: 'Admin login successful',
             accessToken,
-            admin: { id: admin._id, username: admin.username, email: admin.email, role: admin.role },
+            admin: {
+                id: admin.id,
+                firstName: admin.first_name,
+                lastName: admin.last_name,
+                email: admin.email,
+                role: admin.role,
+            },
         })
     } catch (error) {
         res.status(500).json({ message: 'Internal Server Error', error: error.message })
     }
 }
 
-export { registerUser, loginUser, logoutUser, refreshAccessToken, loginAdmin }
+// ── Treasurer login ───────────────────────────────────────────
+const loginTreasurer = async (req, res) => {
+    try {
+        const { email, password } = req.body
+
+        if (!email || !password) {
+            return res.status(400).json({ message: 'Email and password are required' })
+        }
+
+        const treasurer = await Admin.findByEmail(email)
+        if (!treasurer || treasurer.role !== 'treasurer') {
+            return res.status(404).json({ message: 'Treasurer account not found' })
+        }
+
+        if (treasurer.status === 'suspended') {
+            return res.status(403).json({ message: 'This treasurer account has been suspended.' })
+        }
+
+        const isMatch = await Admin.comparePassword(password, treasurer.password_hash)
+        if (!isMatch) {
+            return res.status(401).json({ message: 'Invalid credentials' })
+        }
+
+        const accessToken  = generateAccessToken({ id: treasurer.id, role: treasurer.role })
+        const refreshToken = generateRefreshToken({ id: treasurer.id, role: treasurer.role })
+
+        res.cookie('refreshToken', refreshToken, cookieOptions)
+
+        res.status(200).json({
+            message: 'Treasurer login successful',
+            accessToken,
+            treasurer: {
+                id: treasurer.id,
+                firstName: treasurer.first_name,
+                lastName: treasurer.last_name,
+                email: treasurer.email,
+                role: treasurer.role,
+            },
+        })
+    } catch (error) {
+        res.status(500).json({ message: 'Internal Server Error', error: error.message })
+    }
+}
+
+// ── Google OAuth callback handler ─────────────────────────────
+const googleAuthCallback = async (req, res) => {
+    try {
+        const user = req.user
+
+        const accessToken  = generateAccessToken({ id: user.id, role: user.role })
+        const refreshToken = generateRefreshToken({ id: user.id, role: user.role })
+
+        res.cookie('refreshToken', refreshToken, cookieOptions)
+
+        // redirect to frontend with access token as query param
+        // frontend reads it once, stores in memory, then removes from URL
+        const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000'
+        res.redirect(`${frontendUrl}/auth/callback?token=${accessToken}`)
+    } catch (error) {
+        res.status(500).json({ message: 'Internal Server Error', error: error.message })
+    }
+}
+
+export { registerUser, loginUser, logoutUser, refreshAccessToken, loginAdmin, loginTreasurer, googleAuthCallback }
