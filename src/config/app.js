@@ -109,14 +109,13 @@ app.use((req, res) => {
 app.use((err, req, res, next) => {
     const isProd = process.env.NODE_ENV === 'production'
 
-    // Log full error in all environments for debugging on Render logs
+    // Always log full stack — visible in Render dashboard logs
     console.error(`[${new Date().toISOString()}] ${err.stack}`)
 
     if (err.message?.startsWith('CORS policy')) {
         return res.status(403).json({ message: err.message })
     }
 
-    // JWT errors
     if (err.name === 'JsonWebTokenError') {
         return res.status(401).json({ message: 'Invalid token. Please log in again.' })
     }
@@ -129,8 +128,7 @@ app.use((err, req, res, next) => {
         message: isProd && statusCode === 500
             ? 'An internal server error occurred'
             : err.message,
-        // Only expose stack trace in development
-        ...((!isProd) && { stack: err.stack }),
+        ...(!isProd && { stack: err.stack }),
     })
 })
 

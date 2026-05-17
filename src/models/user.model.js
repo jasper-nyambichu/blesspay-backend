@@ -17,19 +17,39 @@ const User = {
     },
 
     // create or update a member via Google OAuth
-    async upsertGoogle({ googleId, email, firstName, lastName, avatarUrl }) {
+   // create or update a member via Google OAuth
+async upsertGoogle({ googleId, email, firstName, lastName, avatarUrl }) {
+    // First try to find existing user by googleId or email
+    const existing = await query(
+        `SELECT id, first_name, last_name, email, phone, role, status, avatar_url, google_id
+         FROM users WHERE google_id = $1 OR email = $2
+         LIMIT 1`,
+        [googleId, email.toLowerCase()]
+    )
+
+    if (existing.rows.length > 0) {
+        // User exists — update their Google info and return
         const result = await query(
-            `INSERT INTO users (first_name, last_name, email, google_id, avatar_url)
-             VALUES ($1, $2, $3, $4, $5)
-             ON CONFLICT (email) DO UPDATE
-             SET google_id   = EXCLUDED.google_id,
-                 avatar_url  = EXCLUDED.avatar_url,
-                 updated_at  = NOW()
+            `UPDATE users
+             SET google_id  = $1,
+                 avatar_url = $2,
+                 updated_at = NOW()
+             WHERE id = $3
              RETURNING id, first_name, last_name, email, phone, role, status, avatar_url`,
-            [firstName, lastName, email.toLowerCase(), googleId, avatarUrl]
+            [googleId, avatarUrl, existing.rows[0].id]
         )
-        return result.rows[0]
-    },
+        return { ...result.rows[0], isNew: false }
+    }
+
+    // New user — insert fresh record
+    const result = await query(
+        `INSERT INTO users (first_name, last_name, email, google_id, avatar_url)
+         VALUES ($1, $2, $3, $4, $5)
+         RETURNING id, first_name, last_name, email, phone, role, status, avatar_url`,
+        [firstName, lastName, email.toLowerCase(), googleId, avatarUrl]
+    )
+    return { ...result.rows[0], isNew: true }
+},
 
     async findById(id) {
         const result = await query(

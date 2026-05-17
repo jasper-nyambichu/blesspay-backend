@@ -1,7 +1,7 @@
-// src/config/passport.js
 import passport from 'passport'
 import { Strategy as GoogleStrategy } from 'passport-google-oauth20'
 import { User } from '../models/user.model.js'
+import { Notification } from '../models/notification.model.js'
 
 passport.use(new GoogleStrategy(
     {
@@ -27,6 +27,20 @@ passport.use(new GoogleStrategy(
                 lastName,
                 avatarUrl,
             })
+
+            // Send welcome notification only for brand new Google sign-ups
+            if (user.isNew) {
+                try {
+                    await Notification.create({
+                        userId:  user.id,
+                        type:    'info',
+                        title:   'Welcome to BlessPay! 🙏',
+                        message: `Hi ${firstName}, your account has been created successfully. Start your giving journey today.`,
+                    })
+                } catch (notifError) {
+                    console.warn('⚠️  Welcome notification failed (non-critical):', notifError.message)
+                }
+            }
 
             return done(null, user)
         } catch (error) {
